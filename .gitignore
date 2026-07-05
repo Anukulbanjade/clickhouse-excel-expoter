@@ -1,0 +1,12 @@
+# Environment variables
+.env
+.env.*
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Temporary exports
+temp_exports/
