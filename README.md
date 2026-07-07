@@ -7,9 +7,6 @@ A fast, lightweight web interface built with **FastAPI**, **ClickHouse Connect**
 ## ✨ Features
 
 - **⚡ Fast Query Execution:** Connects directly to ClickHouse and streams queries.
-- **🔒 Transit & Storage Security:**
-  - **RSA-2048 / SHA-256 Encryption:** Protects the access key in transit from the UI using the Web Crypto API, with automatic fallback for non-secure HTTP contexts.
-  - **Fernet Symmetric Session Key:** Keeps the stored session cookies encrypted.
 - **🔌 Connection Management:** Displays live connection states and provides explicit `Connect`, `Disconnect`, and `Reconnect` action toggles.
 - **📁 Excel Export (`.xlsx`):** Formats query output into styled, ready-to-read Excel sheets.
 - **🗜️ Automatic Compression:** Automatically packages exports in ZIP/GZIP formats for large datasets.
