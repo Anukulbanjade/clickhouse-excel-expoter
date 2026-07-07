@@ -68,7 +68,7 @@ def decrypt_key(key_val: str) -> str:
 @app.middleware("http")
 async def check_access_key_middleware(request: Request, call_next):
     path = request.url.path
-    if path in ("/api/verify-key", "/api/public-key", "/api/logout", "/"):
+    if path in ("/api/verify-key", "/api/public-key", "/api/logout", "/", "/favicon.ico"):
         return await call_next(request)
         
     if path.startswith("/api/"):
@@ -85,6 +85,10 @@ async def check_access_key_middleware(request: Request, call_next):
             )
             
     return await call_next(request)
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    return Response(status_code=204)
 
 class KeyVerificationRequest(BaseModel):
     key: str
