@@ -584,9 +584,11 @@
         </div>
         <div class="header-controls">
             <button class="theme-btn" id="theme-toggle">🌙 Theme</button>
-            <div class="connection-status">
+            <button class="theme-btn" onclick="logout()" style="background: rgba(239, 68, 68, 0.12); border-color: rgba(239, 68, 68, 0.25); color: #ef4444; font-weight: 500;">🔒 Logout</button>
+            <div class="connection-status" style="display: inline-flex; align-items: center; gap: 0.5rem;">
                 <div class="status-dot" id="conn-dot"></div>
-                <span id="conn-text" style="color: var(--text-secondary)">Checking connection...</span>
+                <span id="conn-text" style="color: var(--text-secondary); max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="">Checking...</span>
+                <button id="conn-toggle-btn" class="theme-btn" style="padding: 0.2rem 0.5rem; font-size: 0.7rem; font-weight: 600; cursor: pointer; display: none; line-height: 1.2;"></button>
             </div>
         </div>
     </header>
@@ -796,27 +798,87 @@
             return 'clickhouse_export_';
         }
 
+        // Intercept global fetch to handle 401 Unauthorized redirect automatically
+        const originalFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const response = await originalFetch(...args);
+            if (response.status === 401) {
+                window.location.reload();
+            }
+            return response;
+        };
+
+        const dot = document.getElementById('conn-dot');
+        const text = document.getElementById('conn-text');
+        const toggleBtn = document.getElementById('conn-toggle-btn');
+
         async function checkConnection() {
-            const dot = document.getElementById('conn-dot');
-            const text = document.getElementById('conn-text');
             try {
-                const res = await fetch('/api/query/preview', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ query: 'SELECT 1' })
-                });
-                if (res.ok) {
+                const res = await fetch('/api/clickhouse/status');
+                if (!res.ok) throw new Error('Status check failed');
+                const data = await res.json();
+                
+                if (data.status === 'connected') {
                     dot.className = 'status-dot active';
-                    text.textContent = 'Connected';
+                    dot.style.backgroundColor = 'var(--success)';
+                    text.textContent = `Connected to ${data.host}:${data.port}`;
+                    text.title = `Accessing user ClickHouse node at ${data.host}:${data.port}`;
+                    toggleBtn.style.display = 'inline-block';
+                    toggleBtn.textContent = '🔌 Disconnect';
+                    toggleBtn.style.background = 'rgba(239, 68, 68, 0.12)';
+                    toggleBtn.style.borderColor = 'rgba(239, 68, 68, 0.25)';
+                    toggleBtn.style.color = '#ef4444';
+                } else if (data.status === 'disconnected') {
+                    dot.className = 'status-dot loading';
+                    dot.style.backgroundColor = '#f97316'; // orange
+                    text.textContent = 'Disconnected';
+                    text.title = data.error || 'Connection disabled by user.';
+                    toggleBtn.style.display = 'inline-block';
+                    toggleBtn.textContent = '⚡ Connect';
+                    toggleBtn.style.background = 'rgba(16, 185, 129, 0.12)';
+                    toggleBtn.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                    toggleBtn.style.color = '#10b981';
                 } else {
                     dot.className = 'status-dot loading';
-                    text.textContent = 'Disconnected';
+                    dot.style.backgroundColor = 'var(--danger)'; // red
+                    text.textContent = 'Connection Error';
+                    text.title = data.error || 'Failed to establish clickhouse-connect connection.';
+                    toggleBtn.style.display = 'inline-block';
+                    toggleBtn.textContent = '⚡ Reconnect';
+                    toggleBtn.style.background = 'rgba(16, 185, 129, 0.12)';
+                    toggleBtn.style.borderColor = 'rgba(16, 185, 129, 0.25)';
+                    toggleBtn.style.color = '#10b981';
                 }
-            } catch {
+            } catch (err) {
                 dot.className = 'status-dot loading';
-                text.textContent = 'Unreachable';
+                dot.style.backgroundColor = 'var(--danger)';
+                text.textContent = 'Server Unreachable';
+                text.title = err.message;
+                toggleBtn.style.display = 'none';
             }
         }
+
+        toggleBtn.addEventListener('click', async () => {
+            toggleBtn.disabled = true;
+            const currentAction = toggleBtn.textContent.includes('Disconnect') ? 'disconnect' : 'connect';
+            try {
+                const res = await fetch('/api/clickhouse/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: currentAction })
+                });
+                if (!res.ok) {
+                    const data = await res.json();
+                    alert(data.detail || `Failed to ${currentAction} ClickHouse.`);
+                }
+            } catch (err) {
+                alert(`Error occurred while trying to ${currentAction}: ` + err.message);
+            } finally {
+                toggleBtn.disabled = false;
+                await checkConnection();
+            }
+        });
+
         checkConnection();
 
         // Run Preview & Count
@@ -868,6 +930,7 @@
             } finally {
                 previewSpinner.style.display = 'none';
                 previewBtn.disabled = false;
+                checkConnection();
             }
         });
 
@@ -1030,10 +1093,7 @@
             }
         }
 
-        // Initialize exports list
-        loadRecentExports();
-        // Poll every 10 seconds to update relative times/self-clean
-        setInterval(loadRecentExports, 10000);
+
 
         let activeTaskId = null;
         
@@ -1179,6 +1239,16 @@
                 currentAbortController = null;
                 activeTaskId = null;
             }
+        }
+
+        async function logout() {
+            try {
+                await fetch('/api/logout', { method: 'POST' });
+            } catch (err) {
+                console.error('Logout API call failed:', err);
+            }
+            document.cookie = "access_key=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+            window.location.reload();
         }
     </script>
 </body>

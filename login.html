@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ClickHouse Exporter - Sign In</title>
+    <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #090a0f;
+            --panel-bg: #11131c;
+            --border: rgba(255, 255, 255, 0.08);
+            --border-hover: rgba(255, 255, 255, 0.16);
+            --primary: #4f46e5;
+            --primary-hover: #4338ca;
+            --text-main: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --text-muted: #4b5563;
+            --success: #10b981;
+            --danger: #ef4444;
+            --danger-bg: rgba(239, 68, 68, 0.1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Outfit', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg);
+            background-image: 
+                radial-gradient(circle at 50% -20%, rgba(79, 70, 229, 0.15) 0%, transparent 60%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-main);
+            overflow: hidden;
+            position: relative;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+            z-index: 10;
+        }
+
+        .card {
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 40px 32px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+            position: relative;
+        }
+
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .logo-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .logo-text {
+            font-size: 18px;
+            font-weight: 600;
+            letter-spacing: -0.3px;
+        }
+
+        h1 {
+            font-size: 24px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            letter-spacing: -0.5px;
+        }
+
+        .subtitle {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 32px;
+            line-height: 1.5;
+        }
+
+        .form-group {
+            margin-bottom: 24px;
+            text-align: left;
+        }
+
+        .form-label {
+            display: block;
+            color: var(--text-secondary);
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .input-wrapper {
+            position: relative;
+        }
+
+        .key-input {
+            width: 100%;
+            padding: 12px 14px;
+            padding-right: 44px;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text-main);
+            font-size: 15px;
+            font-family: 'Fira Code', monospace;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .key-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 0 2px rgba(79, 70, 229, 0.25);
+        }
+
+        .eye-btn {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            padding: 4px;
+            display: flex;
+            align-items: center;
+        }
+
+        .eye-btn:hover {
+            color: var(--text-main);
+        }
+
+        .submit-btn {
+            width: 100%;
+            padding: 12px;
+            background: var(--primary);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background-color 0.2s;
+        }
+
+        .submit-btn:hover {
+            background: var(--primary-hover);
+        }
+
+        .submit-btn:disabled {
+            background: rgba(79, 70, 229, 0.4);
+            cursor: not-allowed;
+        }
+
+        .error-msg {
+            color: var(--danger);
+            background: var(--danger-bg);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+            border-radius: 8px;
+            padding: 12px;
+            font-size: 13px;
+            margin-top: 16px;
+            display: none;
+            line-height: 1.4;
+        }
+
+        .footer-status {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px solid rgba(255, 255, 255, 0.04);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: 'Fira Code', monospace;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background-color: var(--success);
+        }
+
+        .spinner {
+            display: none;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <div class="card">
+            <div class="logo-section">
+                <div class="logo-icon">CH</div>
+                <div class="logo-text">ClickHouse Exporter</div>
+            </div>
+
+            <h1>Sign in to console</h1>
+            <p class="subtitle">Provide the access key configured on your server to verify the session.</p>
+
+            <form id="login-form" onsubmit="handleLogin(event)">
+                <div class="form-group">
+                    <label class="form-label" for="access-key">Access Key</label>
+                    <div class="input-wrapper">
+                        <input type="password" id="access-key" class="key-input" placeholder="••••••••" required autocomplete="current-password">
+                        <button type="button" class="eye-btn" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility">
+                            <svg id="eye-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                                <circle cx="12" cy="12" r="3"></circle>
+                            </svg>
+                        </button>
+                    </div>
+                    <div id="error-alert" class="error-msg">Incorrect access key. Please try again.</div>
+                </div>
+
+                <button type="submit" id="submit-button" class="submit-btn">
+                    <span class="spinner" id="btn-spinner"></span>
+                    <span id="btn-text">Connect Session</span>
+                </button>
+            </form>
+
+            <div class="footer-status">
+                <div class="status-indicator">
+                    <div class="status-dot" id="status-dot"></div>
+                    <span id="status-text">RSA Encrypted Tunnel</span>
+                </div>
+                <span>v1.0.0</span>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        function togglePasswordVisibility() {
+            const input = document.getElementById('access-key');
+            const icon = document.getElementById('eye-icon');
+            if (input.type === 'password') {
+                input.type = 'text';
+                icon.innerHTML = `
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                    <line x1="1" y1="1" x2="23" y2="23"></line>
+                `;
+            } else {
+                input.type = 'password';
+                icon.innerHTML = `
+                    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                `;
+            }
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const key = document.getElementById('access-key').value;
+            const errorAlert = document.getElementById('error-alert');
+            const spinner = document.getElementById('btn-spinner');
+            const btnText = document.getElementById('btn-text');
+            const submitBtn = document.getElementById('submit-button');
+            const statusText = document.getElementById('status-text');
+            const statusDot = document.getElementById('status-dot');
+
+            errorAlert.style.display = 'none';
+            spinner.style.display = 'inline-block';
+            submitBtn.disabled = true;
+
+            // Check if secure context is available for Web Crypto
+            const hasSubtleCrypto = window.crypto && window.crypto.subtle;
+
+            try {
+                let payloadKey = key;
+
+                if (hasSubtleCrypto) {
+                    btnText.textContent = 'Securing...';
+                    statusText.textContent = 'RSA Handshake';
+                    
+                    // Fetch Server Public Key
+                    const pkResponse = await fetch('/api/public-key');
+                    if (!pkResponse.ok) {
+                        throw new Error('Key exchange failed.');
+                    }
+                    const { public_key: pemKey } = await pkResponse.json();
+
+                    // Import Public Key
+                    const cleanPem = pemKey
+                        .replace('-----BEGIN PUBLIC KEY-----', '')
+                        .replace('-----END PUBLIC KEY-----', '')
+                        .replace(/\s/g, '');
+                    
+                    const rawDer = window.atob(cleanPem);
+                    const rawDerBuf = new ArrayBuffer(rawDer.length);
+                    const rawDerView = new Uint8Array(rawDerBuf);
+                    for (let i = 0; i < rawDer.length; i++) {
+                        rawDerView[i] = rawDer.charCodeAt(i);
+                    }
+
+                    const publicKey = await window.crypto.subtle.importKey(
+                        'spki',
+                        rawDerBuf,
+                        {
+                            name: 'RSA-OAEP',
+                            hash: 'SHA-256'
+                        },
+                        true,
+                        ['encrypt']
+                    );
+
+                    // Encrypt access key
+                    const encoder = new TextEncoder();
+                    const encodedKey = encoder.encode(key);
+                    const encryptedBuf = await window.crypto.subtle.encrypt(
+                        { name: 'RSA-OAEP' },
+                        publicKey,
+                        encodedKey
+                    );
+
+                    // Convert Encrypted ArrayBuffer to Base64
+                    const encryptedBytes = new Uint8Array(encryptedBuf);
+                    let binaryStr = '';
+                    for (let i = 0; i < encryptedBytes.byteLength; i++) {
+                        binaryStr += String.fromCharCode(encryptedBytes[i]);
+                    }
+                    payloadKey = window.btoa(binaryStr);
+                } else {
+                    // Fallback to sending base64-encoded plaintext if Web Crypto is unavailable (non-HTTPS)
+                    payloadKey = window.btoa(key);
+                    statusText.textContent = 'Base64 Obfuscation (Insecure context)';
+                    statusDot.style.backgroundColor = 'var(--danger)';
+                }
+
+                btnText.textContent = 'Connecting...';
+                const response = await fetch('/api/verify-key', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key: payloadKey })
+                });
+
+                if (response.ok) {
+                    btnText.textContent = 'Connected';
+                    window.location.reload();
+                } else {
+                    const data = await response.json();
+                    errorAlert.textContent = data.detail || 'Authentication failed.';
+                    errorAlert.style.display = 'block';
+                    spinner.style.display = 'none';
+                    btnText.textContent = 'Connect Session';
+                    statusText.textContent = hasSubtleCrypto ? 'RSA Encrypted Tunnel' : 'Base64 Obfuscation (Insecure context)';
+                    submitBtn.disabled = false;
+                }
+            } catch (err) {
+                console.error(err);
+                errorAlert.textContent = err.message || 'Connection failed.';
+                errorAlert.style.display = 'block';
+                spinner.style.display = 'none';
+                btnText.textContent = 'Connect Session';
+                statusText.textContent = hasSubtleCrypto ? 'RSA Encrypted Tunnel' : 'Base64 Obfuscation (Insecure context)';
+                submitBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>

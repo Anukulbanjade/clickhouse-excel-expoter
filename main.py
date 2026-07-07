@@ -6,16 +6,20 @@ import shutil
 import zipfile
 import logging
 import traceback
+import base64
 from typing import Generator, List
 from concurrent.futures import ThreadPoolExecutor
 import httpx
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Response, Request
 from fastapi.responses import StreamingResponse, HTMLResponse, FileResponse
 from fastapi.background import BackgroundTasks
 from pydantic import BaseModel
 import clickhouse_connect
 import xlsxwriter
 from dotenv import load_dotenv
+from cryptography.hazmat.primitives.asymmetric import rsa, padding
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.fernet import Fernet
 
 # Load environment variables
 load_dotenv()
@@ -35,6 +39,104 @@ CLICKHOUSE_HOST = os.getenv("CLICKHOUSE_HOST", "localhost")
 CLICKHOUSE_PORT = int(os.getenv("CLICKHOUSE_PORT", "8123"))
 CLICKHOUSE_USER = os.getenv("CLICKHOUSE_USER", "default")
 CLICKHOUSE_PASSWORD = os.getenv("CLICKHOUSE_PASSWORD", "1144")
+ACCESS_KEY = os.getenv("ACCESS_KEY", "admin")
+
+# Generate RSA key pair for transit encryption on startup
+private_key = rsa.generate_private_key(
+    public_exponent=65537,
+    key_size=2048
+)
+public_key = private_key.public_key()
+public_pem = public_key.public_bytes(
+    encoding=serialization.Encoding.PEM,
+    format=serialization.PublicFormat.SubjectPublicKeyInfo
+).decode('utf-8')
+
+# Generate Fernet key for session cookie security on startup
+fernet_key = Fernet.generate_key()
+fernet = Fernet(fernet_key)
+
+def decrypt_key(key_val: str) -> str:
+    if not key_val:
+        return ""
+    try:
+        return fernet.decrypt(key_val.encode()).decode()
+    except Exception:
+        # Fallback to plain text for headers/legacy access
+        return key_val
+
+@app.middleware("http")
+async def check_access_key_middleware(request: Request, call_next):
+    path = request.url.path
+    if path in ("/api/verify-key", "/api/public-key", "/api/logout", "/"):
+        return await call_next(request)
+        
+    if path.startswith("/api/"):
+        key = request.headers.get("X-Access-Key")
+        if not key:
+            key = request.cookies.get("access_key")
+            
+        decrypted = decrypt_key(key)
+        if decrypted != ACCESS_KEY:
+            return Response(
+                content='{"detail": "Unauthorized. Please authenticate."}',
+                status_code=401,
+                media_type="application/json"
+            )
+            
+    return await call_next(request)
+
+class KeyVerificationRequest(BaseModel):
+    key: str
+
+@app.get("/api/public-key")
+def get_public_key():
+    return {"public_key": public_pem}
+
+@app.post("/api/verify-key")
+def verify_key(req: KeyVerificationRequest, response: Response):
+    plain_key = None
+    try:
+        encrypted_bytes = base64.b64decode(req.key)
+        decrypted_bytes = private_key.decrypt(
+            encrypted_bytes,
+            padding.OAEP(
+                mgf=padding.MGF1(algorithm=hashes.SHA256()),
+                algorithm=hashes.SHA256(),
+                label=None
+            )
+        )
+        plain_key = decrypted_bytes.decode('utf-8')
+    except Exception as e:
+        logger.warning(f"RSA decryption failed ({str(e)}), checking fallback formats...")
+        # Check if req.key is Base64 encoded plain text
+        try:
+            decoded = base64.b64decode(req.key).decode('utf-8')
+            if decoded == ACCESS_KEY:
+                plain_key = decoded
+        except Exception:
+            pass
+            
+        # Check if req.key is plain text ACCESS_KEY itself
+        if not plain_key and req.key == ACCESS_KEY:
+            plain_key = req.key
+
+    if plain_key == ACCESS_KEY:
+        encrypted_cookie_val = fernet.encrypt(plain_key.encode()).decode()
+        response.set_cookie(
+            key="access_key",
+            value=encrypted_cookie_val,
+            max_age=30 * 24 * 60 * 60,  # 30 days
+            httponly=True,
+            samesite="lax"
+        )
+        return {"status": "authenticated"}
+    raise HTTPException(status_code=401, detail="Invalid access key")
+
+@app.post("/api/logout")
+def logout(response: Response):
+    response.delete_cookie(key="access_key", path="/")
+    return {"status": "logged_out"}
 
 # Temporary directory for zip creations
 TEMP_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "temp_exports")
@@ -61,7 +163,13 @@ class GzipStreamer:
         self.buffer.truncate(0)
         return compressed
 
+CLICKHOUSE_ENABLED = True
+LAST_CONNECTION_ERROR = ""
+
 def get_clickhouse_client():
+    global LAST_CONNECTION_ERROR
+    if not CLICKHOUSE_ENABLED:
+        raise HTTPException(status_code=503, detail="ClickHouse connection is disabled by user.")
     try:
         logger.info(f"Connecting to ClickHouse at {CLICKHOUSE_HOST}:{CLICKHOUSE_PORT}...")
         return clickhouse_connect.get_client(
@@ -72,15 +180,90 @@ def get_clickhouse_client():
             connect_timeout=15
         )
     except Exception as e:
+        LAST_CONNECTION_ERROR = str(e)
         logger.error(f"ClickHouse connection failed: {str(e)}\n{traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to connect to ClickHouse: {str(e)}")
+
+class ConnectionToggleRequest(BaseModel):
+    action: str  # "connect" or "disconnect"
+
+@app.get("/api/clickhouse/status")
+def get_clickhouse_status():
+    global CLICKHOUSE_ENABLED, LAST_CONNECTION_ERROR
+    if not CLICKHOUSE_ENABLED:
+        return {
+            "status": "disconnected",
+            "host": CLICKHOUSE_HOST,
+            "port": CLICKHOUSE_PORT,
+            "error": "Disconnected by user."
+        }
+    try:
+        # Fast test connection
+        client = clickhouse_connect.get_client(
+            host=CLICKHOUSE_HOST,
+            port=CLICKHOUSE_PORT,
+            username=CLICKHOUSE_USER,
+            password=CLICKHOUSE_PASSWORD,
+            connect_timeout=3
+        )
+        client.close()
+        LAST_CONNECTION_ERROR = ""
+        return {
+            "status": "connected",
+            "host": CLICKHOUSE_HOST,
+            "port": CLICKHOUSE_PORT,
+            "error": ""
+        }
+    except Exception as e:
+        err_msg = str(e)
+        LAST_CONNECTION_ERROR = err_msg
+        return {
+            "status": "error",
+            "host": CLICKHOUSE_HOST,
+            "port": CLICKHOUSE_PORT,
+            "error": err_msg
+        }
+
+@app.post("/api/clickhouse/toggle")
+def toggle_clickhouse_connection(req: ConnectionToggleRequest):
+    global CLICKHOUSE_ENABLED, LAST_CONNECTION_ERROR
+    if req.action == "disconnect":
+        CLICKHOUSE_ENABLED = False
+        LAST_CONNECTION_ERROR = "Disconnected by user."
+        return {"status": "disconnected"}
+    elif req.action == "connect":
+        CLICKHOUSE_ENABLED = True
+        try:
+            client = clickhouse_connect.get_client(
+                host=CLICKHOUSE_HOST,
+                port=CLICKHOUSE_PORT,
+                username=CLICKHOUSE_USER,
+                password=CLICKHOUSE_PASSWORD,
+                connect_timeout=5
+            )
+            client.close()
+            LAST_CONNECTION_ERROR = ""
+            return {"status": "connected"}
+        except Exception as e:
+            LAST_CONNECTION_ERROR = str(e)
+            raise HTTPException(status_code=500, detail=f"Connection failed: {str(e)}")
+    raise HTTPException(status_code=400, detail="Invalid action. Use 'connect' or 'disconnect'.")
 
 class QueryRequest(BaseModel):
     query: str
     filename: str = "query_export"
 
 @app.get("/", response_class=HTMLResponse)
-def read_index():
+def read_index(request: Request):
+    cookie_key = request.cookies.get("access_key")
+    decrypted = decrypt_key(cookie_key)
+    if decrypted != ACCESS_KEY:
+        login_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "login.html")
+        if os.path.exists(login_path):
+            with open(login_path, "r", encoding="utf-8") as f:
+                return f.read()
+        return "<h3>login.html not found</h3>"
+        
     index_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
@@ -505,9 +688,27 @@ def export_query(req: QueryRequest, format: str = "xlsx", background_tasks: Back
     
     return {"task_id": task_id}
 
+@app.on_event("startup")
+def startup_event():
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+        s.close()
+    except Exception:
+        ip = "127.0.0.1"
+    
+    logger.info(f"ClickHouse Exporter is running! Local URL: http://localhost:8000 | Network URL: http://{ip}:8000")
+
 if __name__ == "__main__":
     import uvicorn
     if os.path.exists(TEMP_DIR):
         shutil.rmtree(TEMP_DIR)
     os.makedirs(TEMP_DIR, exist_ok=True)
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    
+    log_config = uvicorn.config.LOGGING_CONFIG.copy()
+    log_config["formatters"]["access"]["fmt"] = "%(asctime)s [%(levelname)s] %(client_addr)s - \"%(request_line)s\" %(status_code)s"
+    log_config["formatters"]["default"]["fmt"] = "%(asctime)s [%(levelname)s] %(message)s"
+    
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True, log_config=log_config)
